@@ -21,7 +21,6 @@ import android.support.v7.app.AppCompatActivity;
 import android.text.Editable;
 import android.text.InputFilter;
 import android.text.TextWatcher;
-import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -31,7 +30,6 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.ProgressBar;
-import android.widget.Toast;
 
 import com.firebase.ui.auth.AuthUI;
 import com.google.firebase.auth.FirebaseAuth;
@@ -119,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
                     mSendButton.setEnabled(false);
                 }
             }
-
+            
             @Override
             public void afterTextChanged(Editable editable) {
             }
@@ -138,44 +136,16 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        mChildEventListener = new ChildEventListener() {
-            @Override
-            public void onChildAdded(DataSnapshot dataSnapshot, String s) {
-                FriendlyMessage mFriendlyMessage = dataSnapshot.getValue(FriendlyMessage.class);
-                mMessageAdapter.add(mFriendlyMessage);
-            }
-            @Override
-            public void onChildChanged(DataSnapshot dataSnapshot, String s) {
-            }
-            @Override
-            public void onChildRemoved(DataSnapshot dataSnapshot) {
-            }
-            @Override
-            public void onChildMoved(DataSnapshot dataSnapshot, String s) {
-            }
-            @Override
-            public void onCancelled(DatabaseError databaseError) {
-            }
-        };
-        mMessageDatabaseReference.addChildEventListener(mChildEventListener);
-
         mAuthStateListener = new FirebaseAuth.AuthStateListener() {
             @Override
             public void onAuthStateChanged(@NonNull FirebaseAuth firebaseAuth) {
                 FirebaseUser user = firebaseAuth.getCurrentUser();
                 if (user != null){
                     // user is signed in
-                    Toast.makeText(MainActivity.this,"You're now signed in.",Toast.LENGTH_SHORT);
+                    onSignedInInitialize(user.getDisplayName());
                 }
                 else {
-                    Log.e("mainactivity","not signed in");
-                    //yaha kya karna cahti ?
-                    /*
-                    agr user signed in nhi h to..login screen..google ya email k thru...
-                    okay uske liye firebase ka library use karri ?
-                    github pe dikha
-
-                     */
+                    onSignedOutCleanUp();
                     // user is not signed in
                     startActivityForResult(
                             AuthUI.getInstance()
@@ -186,7 +156,6 @@ public class MainActivity extends AppCompatActivity {
                                     .build(),
                             RC_SIGN_IN);
                 }
-
             }
         };
     }
@@ -213,5 +182,48 @@ public class MainActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         mFirebaseAuth.removeAuthStateListener(mAuthStateListener);
+        mMessageAdapter.clear();
+        detachDatabaseReadListener();
+
+    }
+
+    private void onSignedInInitialize(String username ){
+        mUsername = username;
+        attachDatabaseReadListener();
+    }
+
+    private void onSignedOutCleanUp(){
+        mUsername = ANONYMOUS;
+        mMessageAdapter.clear();
+        detachDatabaseReadListener();
+    }
+
+    private void attachDatabaseReadListener(){
+        if (mChildEventListener == null) {
+            mChildEventListener = new ChildEventListener() {
+                @Override
+                public void onChildAdded(DataSnapshot dataSnapshot, String s) {
+                    FriendlyMessage mFriendlyMessage = dataSnapshot.getValue(FriendlyMessage.class);
+                    mMessageAdapter.add(mFriendlyMessage);
+                }
+                @Override
+                public void onChildChanged(DataSnapshot dataSnapshot, String s) {}
+                @Override
+                public void onChildRemoved(DataSnapshot dataSnapshot) { }
+                @Override
+                public void onChildMoved(DataSnapshot dataSnapshot, String s) { }
+                @Override
+                public void onCancelled(DatabaseError databaseError) { }
+            };
+            mMessageDatabaseReference.addChildEventListener(mChildEventListener);
+        }
+
+    }
+
+    private void detachDatabaseReadListener (){
+        if(mChildEventListener != null) {
+            mMessageDatabaseReference.removeEventListener(mChildEventListener);
+            mChildEventListener = null;
+        }
     }
 }

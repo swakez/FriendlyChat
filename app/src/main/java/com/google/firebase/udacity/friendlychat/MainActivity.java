@@ -36,6 +36,8 @@ import android.widget.ProgressBar;
 import android.widget.Toast;
 
 import com.firebase.ui.auth.AuthUI;
+import com.firebase.ui.auth.BuildConfig;
+import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
@@ -44,13 +46,17 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
 import com.google.firebase.storage.FirebaseStorage;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -60,6 +66,7 @@ public class MainActivity extends AppCompatActivity {
 
     public static final String ANONYMOUS = "anonymous";
     public static final int DEFAULT_MSG_LENGTH_LIMIT = 1000;
+    public static final String FRIENDLY_MESSAGE_LENGTH_KEY = "friendly_message_length";
 
     public static final int RC_SIGN_IN = 1;
 
@@ -72,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
 
     private String mUsername;
 
+    // Firebase Instance variables
     private FirebaseDatabase mFirebaseDatabase;
     private DatabaseReference mMessageDatabaseReference;
     private ChildEventListener mChildEventListener;
@@ -79,8 +87,7 @@ public class MainActivity extends AppCompatActivity {
     private FirebaseAuth.AuthStateListener mAuthStateListener;
     private FirebaseStorage mFirebaseStorage;
     private StorageReference mChatPhotoStorageReference;
-
-
+    private FirebaseRemoteConfig mFirebaseRemoteConfig;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -92,6 +99,7 @@ public class MainActivity extends AppCompatActivity {
         mFirebaseDatabase = FirebaseDatabase.getInstance();
         mFirebaseAuth = FirebaseAuth.getInstance();
         mFirebaseStorage = FirebaseStorage.getInstance();
+        mFirebaseRemoteConfig = FirebaseRemoteConfig.getInstance();
 
         mMessageDatabaseReference = mFirebaseDatabase.getReference().child("messages");
         mChatPhotoStorageReference = mFirebaseStorage.getReference().child("chat_photos");
@@ -117,8 +125,8 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View view) {
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("image/jpeg");
-                intent.putExtra(Intent.EXTRA_LOCAL_ONLY,true);
-                startActivityForResult(Intent.createChooser(intent,"Complete action using"),RC_PHOTO_PICKER);
+                intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
+                startActivityForResult(Intent.createChooser(intent, "Complete action using"), RC_PHOTO_PICKER);
             }
         });
 
@@ -159,11 +167,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onAuthStateChanged(@NonNull FirebaseAuth firebaseAuth) {
                 FirebaseUser user = firebaseAuth.getCurrentUser();
-                if (user != null){
+                if (user != null) {
                     // user is signed in
                     onSignedInInitialize(user.getDisplayName());
-                }
-                else {
+                } else {
                     onSignedOutCleanUp();
                     // user is not signed in
                     startActivityForResult(
@@ -177,6 +184,16 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         };
+        FirebaseRemoteConfigSettings configSettings = new FirebaseRemoteConfigSettings.Builder()
+                .setDeveloperModeEnabled(BuildConfig.DEBUG)
+                .build();
+        mFirebaseRemoteConfig.setConfigSettings(configSettings);
+
+        Map<String, Object> defaultConfigMap = new HashMap<>();
+        defaultConfigMap.put(FRIENDLY_MESSAGE_LENGTH_KEY, DEFAULT_MSG_LENGTH_LIMIT);
+
+        mFirebaseRemoteConfig.setDefaults(defaultConfigMap);
+        fetchConfig();
     }
 
     @Override
@@ -211,31 +228,31 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, "Sign in is Canceled!", Toast.LENGTH_SHORT).show();
                 finish();
             }
-        }else if (requestCode == RC_PHOTO_PICKER && resultCode == RESULT_OK){
-                Log.e("","in activity for result photopicker ok");
-                Uri selectedImageUri = data.getData();
+        } else if (requestCode == RC_PHOTO_PICKER && resultCode == RESULT_OK) {
+            Log.e("", "in activity for result photopicker ok");
+            Uri selectedImageUri = data.getData();
 
-                //
-                StorageReference photoRef = mChatPhotoStorageReference.child(selectedImageUri.getLastPathSegment());
-                photoRef.putFile(selectedImageUri)
-                        .addOnSuccessListener(this, new
-                                OnSuccessListener<UploadTask.TaskSnapshot>() {
-                    @Override
-                    public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
-                        Log.e("","in on success photoreputfile");
-                        Uri downloadUrl = taskSnapshot.getDownloadUrl();
+            //
+            StorageReference photoRef = mChatPhotoStorageReference.child(selectedImageUri.getLastPathSegment());
+            photoRef.putFile(selectedImageUri)
+                    .addOnSuccessListener(this, new
+                            OnSuccessListener<UploadTask.TaskSnapshot>() {
+                                @Override
+                                public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                                    Log.e("", "in on success photoreputfile");
+                                    Uri downloadUrl = taskSnapshot.getDownloadUrl();
 
-                        FriendlyMessage friendlyMessage = new FriendlyMessage(null, mUsername , downloadUrl.toString());
-                        mMessageDatabaseReference.push().setValue(friendlyMessage);
-                    }
-                });
-            }
+                                    FriendlyMessage friendlyMessage = new FriendlyMessage(null, mUsername, downloadUrl.toString());
+                                    mMessageDatabaseReference.push().setValue(friendlyMessage);
+                                }
+                            });
+        }
 
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        switch(item.getItemId()){
+        switch (item.getItemId()) {
             case R.id.sign_out_menu:
                 AuthUI.getInstance().signOut(this);
                 return true;
@@ -244,18 +261,18 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void onSignedInInitialize(String username ){
+    private void onSignedInInitialize(String username) {
         mUsername = username;
         attachDatabaseReadListener();
     }
 
-    private void onSignedOutCleanUp(){
+    private void onSignedOutCleanUp() {
         mUsername = ANONYMOUS;
         mMessageAdapter.clear();
         detachDatabaseReadListener();
     }
 
-    private void attachDatabaseReadListener(){
+    private void attachDatabaseReadListener() {
         if (mChildEventListener == null) {
             mChildEventListener = new ChildEventListener() {
                 @Override
@@ -266,21 +283,50 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onChildChanged(DataSnapshot dataSnapshot, String s) {}
                 @Override
-                public void onChildRemoved(DataSnapshot dataSnapshot) { }
+                public void onChildRemoved(DataSnapshot dataSnapshot) {}
                 @Override
-                public void onChildMoved(DataSnapshot dataSnapshot, String s) { }
+                public void onChildMoved(DataSnapshot dataSnapshot, String s) {}
                 @Override
-                public void onCancelled(DatabaseError databaseError) { }
+                public void onCancelled(DatabaseError databaseError) {}
             };
             mMessageDatabaseReference.addChildEventListener(mChildEventListener);
         }
-
     }
 
-    private void detachDatabaseReadListener (){
-        if(mChildEventListener != null) {
+    private void detachDatabaseReadListener() {
+        if (mChildEventListener != null) {
             mMessageDatabaseReference.removeEventListener(mChildEventListener);
             mChildEventListener = null;
         }
+    }
+
+    public void fetchConfig() {
+        long catchExpiration = 3600;
+
+        if (mFirebaseRemoteConfig.getInfo().getConfigSettings().isDeveloperModeEnabled()) {
+            catchExpiration = 500;
+        }
+        mFirebaseRemoteConfig.fetch(catchExpiration).addOnSuccessListener(new OnSuccessListener<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) {
+                mFirebaseRemoteConfig.activateFetched();
+                applyRetrievedLengthLimit();
+            }
+        })
+                .addOnFailureListener(new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        Log.e(TAG,"error fetching config",e);
+                        applyRetrievedLengthLimit();
+                    }
+                });
+
+    }
+
+    public void applyRetrievedLengthLimit(){
+        Long friendly_msg_length = mFirebaseRemoteConfig.getLong(FRIENDLY_MESSAGE_LENGTH_KEY);
+        mMessageEditText.setFilters(new InputFilter[]{new InputFilter.LengthFilter(friendly_msg_length.intValue())});
+        Log.e(TAG,FRIENDLY_MESSAGE_LENGTH_KEY + " = " + friendly_msg_length);
+
     }
 }
